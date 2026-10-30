@@ -15,6 +15,25 @@
 
 如果仍然出现 GitHub 文件 404，确认当前 main 分支可以查看根目录 Dockerfile，再检查绑定仓库的访问权限和目标目录；不要用空 Dockerfile 绕过检查。
 
+## 自动部署（GitHub → 云托管流水线）
+
+云托管已把本仓库 `main` 绑定为流水线代码源，并安装了 push Webhook（`http://webhook.tcloudbase.com/`）：
+
+1. `git push` 到 `yulongbai-nov/exchange-rate-program` 的 `main`
+2. GitHub 向云托管发送 push Webhook
+3. 云托管按仓库根目录 `Dockerfile` 构建镜像并全量发布
+
+构建约 2–3 分钟，控制台「部署发布 → 历史版本」出现新版本即完成；「操作记录」可查每次部署结果。
+
+该 Webhook 偶发 502（腾讯侧端点短暂不可用），失败时这次 push 不会构建。排查与补救：
+
+- GitHub 仓库 Settings → Webhooks → Recent Deliveries 查看响应码
+- 漏构建时，在控制台「部署发布 → 发布」从仓库手动发布一次，或修复后重新 push 提交
+
+## 平台证书（出站 TLS）
+
+云托管在出口用自签名证书终结 `api.weixin.qq.com`，该证书挂载在容器内 `/app/cert/certificate.crt`。`backend/entrypoint.sh` 启动时把它追加到系统 CA 包，并通过 `SSL_CERT_FILE` 生效——**不关闭 TLS 校验**，公共 CA 仍然有效（中行行情不受影响）。
+
 环境变量直接填值，不加 shell 的 `export` 或外层单引号。密钥只放云托管运行配置，不放 GitHub、构建参数或 Dockerfile：
 
 - `WX_APP_ID`：`wxcdd43c92899fd398`（小程序「换汇查查」）。

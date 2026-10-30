@@ -72,10 +72,12 @@ class BackupManager:
         self.last_ok_at = None
         self.last_error = None
         self.restored_from = None
+        self.restore_failed = False
         self._sdk = None
         if os.getenv('BACKUP_ENABLED', '1').strip().lower() not in ('0', 'false', 'no'):
             try:
                 from qcloud_cos import CosConfig, CosS3Client  # third-party, optional
+                logging.getLogger('qcloud_cos').setLevel(logging.WARNING)
                 self._sdk = (CosConfig, CosS3Client)
             except Exception as error:  # pragma: no cover - depends on image
                 self.last_error = 'cos sdk unavailable: ' + type(error).__name__
@@ -102,10 +104,26 @@ class BackupManager:
                            Token=credentials['token'], Scheme='https')
         return CosS3Client(config)
 
+    def _has_quotes(self):
+        try:
+            handle = sqlite3.connect(self.path, timeout=10)
+            try:
+                return handle.execute('SELECT COUNT(*) FROM quotes').fetchone()[0] > 0
+            finally:
+                handle.close()
+        except Exception:
+            return False
+
     def backup_once(self):
         if not self.enabled:
             return False
+        if self.restore_failed:
+            # Never overwrite the remote history with a database this instance
+            # failed to restore at startup.
+            return False
         if not Path(self.path).exists():
+            return False
+        if not self._has_quotes():
             return False
         try:
             body = snapshot_bytes(self.path)
@@ -130,33 +148,42 @@ class BackupManager:
             client.delete_object(Bucket=self.bucket, Key=key)
             self.logger.info('old snapshot removed: %s', key)
 
-    def restore_if_missing(self):
+    def restore_if_missing(self, attempts=6, delay=5):
         target = Path(self.path)
         if target.exists() and target.stat().st_size > 0:
             return False
         if not self.enabled:
             return False
-        try:
-            client = self._client()
-            listing = client.list_objects(Bucket=self.bucket, Prefix=self.prefix)
-            keys = sorted(item['Key'] for item in (listing.get('Contents') or [])
-                          if item['Key'].endswith('.sqlite3'))
-            if not keys:
-                return False
-            latest = keys[-1]
-            response = client.get_object(Bucket=self.bucket, Key=latest)
-            body = response['Body'].get_raw_stream().read()
-            target.parent.mkdir(parents=True, exist_ok=True)
-            temporary = str(target) + '.restore'
-            Path(temporary).write_bytes(body)
-            os.replace(temporary, target)
-            self.restored_from = latest
-            self.logger.info('database restored from snapshot: %s', latest)
-            return True
-        except Exception as error:
-            self.last_error = type(error).__name__
-            self.logger.warning('database restore failed: %s', error)
-            return False
+        # The platform network is not always ready at container start; retry
+        # before falling back to an empty database.
+        for attempt in range(1, attempts + 1):
+            try:
+                client = self._client()
+                listing = client.list_objects(Bucket=self.bucket, Prefix=self.prefix)
+                keys = sorted(item['Key'] for item in (listing.get('Contents') or [])
+                              if item['Key'].endswith('.sqlite3'))
+                if not keys:
+                    return False
+                latest = keys[-1]
+                response = client.get_object(Bucket=self.bucket, Key=latest)
+                body = response['Body'].get_raw_stream().read()
+                target.parent.mkdir(parents=True, exist_ok=True)
+                temporary = str(target) + '.restore'
+                Path(temporary).write_bytes(body)
+                os.replace(temporary, target)
+                self.restored_from = latest
+                self.restore_failed = False
+                self.logger.info('database restored from snapshot: %s (%s bytes)', latest, len(body))
+                return True
+            except Exception as error:
+                self.last_error = type(error).__name__
+                if attempt < attempts:
+                    self.logger.warning('database restore attempt %s/%s failed: %s', attempt, attempts, error)
+                    time.sleep(delay)
+                else:
+                    self.restore_failed = True
+                    self.logger.warning('database restore failed after %s attempts: %s', attempts, error)
+        return False
 
     def start(self):
         if not self.enabled:
@@ -177,4 +204,4 @@ class BackupManager:
     def status(self):
         return {'enabled': self.enabled, 'bucket': self.bucket if self.enabled else None,
                 'last_ok_at': self.last_ok_at, 'last_error': self.last_error,
-                'restored_from': self.restored_from}
+                'restored_from': self.restored_from, 'restore_failed': self.restore_failed}

@@ -1,0 +1,32 @@
+name: CloudRun container smoke
+
+on:
+  push:
+    branches: [codex/wechat-cloudrun-docker-smoke]
+
+permissions:
+  contents: read
+
+jobs:
+  container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build container
+        run: docker build -t exchange-rate-smoke .
+      - name: Start and inspect real-mode health
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run -d --name exchange-rate-smoke -p 127.0.0.1:18080:8000 exchange-rate-smoke
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:18080/health > /tmp/exchange-health.json; then
+              break
+            fi
+            sleep 1
+          done
+          python3 -c 'import json; d=json.load(open("/tmp/exchange-health.json")); print(json.dumps(d)); assert d["ok"] and d["demo"] is False and d["last_attempt"]'
+      - name: Clean up
+        if: always()
+        run: docker rm -f exchange-rate-smoke || true

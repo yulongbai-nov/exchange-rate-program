@@ -88,3 +88,105 @@ docker run --rm --name exchange-rate-api -p 127.0.0.1:8000:8000 -v exchange-rate
 ```
 
 另开终端请求 `http://127.0.0.1:8000/health`。本地 Docker volume 演示持久化，不代表云托管已有同等能力。微信登录和消息测试需要另行通过受保护的运行环境配置注入对应变量。
+
+## 从零到上线的完整步骤
+
+这一节按真实操作顺序写，任何一步失败先看后面的「踩坑记录」，不要为了绕过去而关闭校验。
+
+### 1. 准备仓库
+
+1. 把本仓库 fork 到自己的 GitHub 账号（云托管流水线只能绑定有权限的仓库）。
+2. 本地 clone 自己的 fork，把上游加为 remote 方便同步：
+
+```bash
+git clone git@github.com:<你的账号>/exchange-rate-program.git
+cd exchange-rate-program
+git remote add upstream https://github.com/jingtianzhang27/exchange-rate-program.git
+```
+
+### 2. 创建云托管环境
+
+1. 打开 https://cloud.weixin.qq.com ，用小程序管理员微信扫码登录。
+2. 「设置 → 环境设置 → 创建新环境」，记下**环境ID**（形如 `prod-xxxxxxxx`）和环境名称。
+3. 左侧「对象存储」会自动生成一个存储桶，在「存储配置」里记下**桶名**和**地域**，快照备份要用。
+
+### 3. 新建服务并绑定仓库
+
+1. 「服务管理 → 服务列表 → 新建服务」，服务名建议与 `app.js` 里的 `cloudService` 一致，本项目是 `exchange-rate-api`。
+2. 进入服务 → 「部署发布」→ 选择方式「绑定 GitHub 仓库」→ 点「授权」完成 GitHub OAuth（只授权需要的仓库即可）。
+3. 代码仓库选自己的 fork，分支 `main`，端口与容器监听端口一致（本项目 `8000`），目标目录留空或填 `.`，Dockerfile 选「有」。
+4. 点「发布」等 2–5 分钟。首版也可以先用「手动上传代码包」跑通，再切回仓库。
+
+### 4. 配置环境变量
+
+「服务 → 服务设置 → 环境变量」逐条添加。保存后平台会重发一次版本（备注通常是 `server config change`），这是正常现象。变量清单见上文。
+
+### 5. 部署后验证
+
+1. 「部署发布」里看到版本状态 `normal`。
+2. 「云端调试」→ `GET /health`，确认 `ok=true`、`demo=false`、`last_attempt` 持续更新、`collection_error=null`。
+3. 再看 `instance`（当前实例名）和 `backup_*` 字段。快照要等库里至少有一条报价才会第一次上传。
+4. 「运行日志」里确认没有证书、TLS、DNS 相关错误；中行 DNS 偶发失败一般下一轮采集会自愈。
+
+### 6. 小程序端对接
+
+1. `miniprogram/project.config.json` 的 `appid` 改成自己的小程序 AppID。
+2. `miniprogram/app.js` 里 `cloudEnv` 填云托管**环境ID**，`cloudService` 填服务名，`transport` 保持 `cloud`。
+3. 小程序里用 `wx.cloud.callContainer`，不需要配服务器域名；只有连本地或自有后端时才改成 `transport:'http'` 并配置 `apiBase`。
+
+### 7. 上传、体验、上线
+
+1. 方式一：微信开发者工具导入 `miniprogram/`，扫码登录后点「上传」。
+2. 方式二：`miniprogram-ci` + 小程序代码上传密钥。密钥在「开发管理 → 开发设置 → 小程序代码上传密钥」生成，**只显示一次**；生成后把上传机器的公网 IP 加进同一页的「IP白名单」，否则会报 `invalid ip`。
+3. 「版本管理」→ 开发版本 → 「选为体验版本」→ 生成体验版二维码，管理员和体验成员扫码打开。
+4. 正式上线还要：小程序备案、微信认证（不认证不能被搜索/分享）、提交审核、发布。体验版不需要备案，可以先用来验证功能。
+
+## 踩坑记录
+
+下面都是实际踩过的，按从难到易排。遇到问题先对应着看，不要靠关校验、关验证的方式绕过。
+
+### 1. 容器访问微信接口报证书错误（verify_code=18）
+
+- 现象：`/api/login` 返回 `wechat_tls_error`，提示「遇到自签名证书」。
+- 原因：云托管把 `api.weixin.qq.com` 解析到内网出口，用平台证书终结 TLS，而容器里的 Python 只信任公共 CA。
+- 正确做法：启动时把平台证书 `/app/cert/certificate.crt` 追加进系统 CA 包，用 `SSL_CERT_FILE` / `REQUESTS_CA_BUNDLE` 生效，**校验保持开启**。见 `backend/entrypoint.sh`。
+- 错误做法：`ssl._create_unverified_context()`、`verify=False`、关掉 `check_hostname` —— 等于给中间人开门。
+
+### 2. CLI 部署上传空代码包
+
+- 现象：构建日志 `warning [code.zip]: zipfile is empty`，版本 `build_failed`。
+- 原因：CloudRun CLI 用 `.dockerignore` 打包，但它不支持 `!` 取反；白名单写法（`**` + `!backend/`）会被它当成全部忽略。
+- 做法：`.dockerignore` 只写普通排除项，不要用取反；同时保证 `Dockerfile` 不被排除。
+
+### 3. 重新部署后历史数据没了
+
+- 原因：容器本地盘不持久，每次部署/迁移实例都是一块新盘。
+- 做法：`backend/storage.py` 定时（默认 10 分钟）和收到 SIGTERM 时把 SQLite 在线快照传到对象存储；启动时如果数据库不存在就自动恢复。
+- 注意：恢复前网络可能还没就绪，要重试；恢复失败时不要上传空库，否则会把远端历史覆盖掉。
+
+### 4. 多实例导致 SQLite 数据分裂
+
+- 每个实例的 `/data` 是独立的，用户请求随机落到实例会看到不同数据；采集器和提醒派发也会重复执行。
+- 用 SQLite 就必须把最大实例数设为 1。要多实例先迁云托管 MySQL，并给采集/派发加单实例租约。
+
+### 5. 启动瞬间访问对象存储失败
+
+- 现象：日志 `database restore failed: <urlopen error [Errno 111] Connection refused>`。
+- 原因：容器刚起来时平台网络还没就绪。
+- 做法：恢复最多重试 12 次 × 5 秒；仍然失败就标记状态并暂停本轮备份，保证不会覆盖远端数据。
+
+### 6. 小程序代码上传报 invalid ip
+
+- 代码上传密钥有 IP 白名单：在「开发设置 → IP白名单」把上传机器的出口 IP 加进去再传。
+
+### 7. AppID 不一致
+
+- 后端 `WX_APP_ID`、`project.config.json` 的 `appid`、云托管环境所属小程序必须是同一个；不一致时微信会返回 `40013` 或 `40029`。
+
+### 8. 订阅消息不是无限推送
+
+- 普通一次性订阅：用户授权一次只能发一条；长期订阅需要类目资格。推送成功不等于用户看到。
+
+### 9. 密钥只放环境变量
+
+- AppSecret、CLI 密钥、代码上传密钥都不要进仓库、构建参数、日志和截图；公开过的密钥先重置再用。

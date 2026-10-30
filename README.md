@@ -29,7 +29,7 @@ curl http://127.0.0.1:8000/health
 - 进程启动时如果 `/data/rates.sqlite3` 不存在，会自动下载最新快照恢复，因此重新部署不会丢历史
 - 访问对象存储不需要手工申请 COS 密钥：容器内调用平台接口 `GET http://api.weixin.qq.com/_/cos/getauth` 获取当前环境存储桶的临时密钥
 
-`GET /health` 会返回 `instance`（实例名）和 `backup`（是否启用、上次成功时间、上次错误、恢复来源），可直接判断备份是否正常。
+`GET /health` 会返回 `instance`（实例名）、`db_quotes`（报价条数）和 `backup` 详情，平铺字段包括 `backup_enabled`、`backup_last_ok_at`、`backup_last_error`、`backup_restored_from`、`backup_restore_failed`，可直接判断备份和恢复是否正常。
 
 可选环境变量（默认值适配当前环境）：
 

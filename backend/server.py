@@ -51,9 +51,15 @@ class Application:
         init_db(path)
 
     def collect(self):
-        disabled = {item.strip() for item in os.getenv('COLLECT_SOURCES', '').split(',') if item.strip()}
+        allowed = {item.strip() for item in os.getenv('COLLECT_SOURCES', '').split(',') if item.strip()}
+        in_cloud = bool(os.getenv('CBR_ENV_ID'))  # injected by CloudRun, absent locally
+        yahoo_live = os.getenv('YAHOO_LIVE', '').strip().lower() in ('1', 'true', 'yes')
         for source in SOURCES:
-            if disabled and source not in disabled:
+            if allowed and source not in allowed:
+                continue
+            if source == 'yahoo' and in_cloud and not yahoo_live:
+                # Yahoo Finance is not reachable from mainland CloudRun egress;
+                # keep the source for its seeded history, skip live polling.
                 continue
             self.collect_source(source)
         if not self.demo:
@@ -108,7 +114,9 @@ class Application:
         if path == '/health' and method == 'GET':
             health = {'ok': True, 'demo': self.demo, 'last_attempt': self.last_attempt,
                       'collection_error': self.collect_error, 'instance': socket.gethostname(),
-                      'source_status': self.source_status, 'pairs': len(PAIRS), 'sources': len(SOURCES)}
+                      'source_status': self.source_status, 'pairs': len(PAIRS), 'sources': len(SOURCES),
+                      'collect_cloud': bool(os.getenv('CBR_ENV_ID')),
+                      'collect_yahoo_live': os.getenv('YAHOO_LIVE', '').strip().lower() in ('1', 'true', 'yes')}
             if self.backup is not None:
                 status = self.backup.status()
                 health['backup'] = status

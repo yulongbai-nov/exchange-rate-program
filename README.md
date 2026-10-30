@@ -29,12 +29,24 @@ curl http://127.0.0.1:8000/health
 | 中行现钞买入 | 同上 | 同上 | 与现汇对比看结汇差 |
 | 新浪在岸 | 16 对全覆盖 | 秒级 tick | 公开市场行情，非银行牌价 |
 | 新浪离岸 | USD/CNH | 秒级 tick | 离岸市场，波动可能与在岸有差异 |
-| Yahoo Finance | 16 对全覆盖 | 秒级/5 分钟 | 全球公开行情，作为交叉校验来源 |
+| Yahoo Finance | 16 对全覆盖 | 秒级/5 分钟 | 全球公开行情；国内云托管出站访问受限，云端默认只用其历史数据 |
 | 每日中间价 | 16 对 | 每日 | 公开日更汇率兜底，缺失来源显示 — |
 
 不同来源口径不同，**不要直接比较绝对值**。监测规则按「货币对 + 来源」触发，只使用该来源的报价。
 
 界面为 Yahoo Finance 风格：多色折线（无数据点）、右侧 y 轴、1D 前收虚线、时间范围 `1D/5D/1M/6M/1Y/Max`、双指缩放/拖动、图例点选显隐、反向换算按钮（`1 外币 = x CNY` ⇄ `1 人民币 = x 外币`）。图表用开源 Apache ECharts + echarts-for-weixin 适配层，许可证见 `miniprogram/components/ec-canvas/THIRD_PARTY.md`。
+
+### 数据源开关（云托管出站限制）
+
+Yahoo Finance 在国内云托管的出站链路上**无法访问**（本地开发和离线生成历史数据正常）。因此云端用
+`COLLECT_SOURCES` 环境变量只采集可用的实时来源：
+
+```bash
+COLLECT_SOURCES=boc_buy,boc_cash,sina,cnh,daily
+```
+
+Yahoo 仍保留在来源列表和历史数据里（来自 `data/history-seed.json.gz`），只是云端不实时抓取，避免每 30 秒刷错误日志。
+本地跑 `python3 -m backend.server` 不设置该变量时会尝试全部来源。
 
 ## 历史数据预填
 

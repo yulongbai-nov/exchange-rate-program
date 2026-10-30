@@ -45,8 +45,9 @@ def main():
             for epoch, close in zip(stamps, closes):
                 if not close or not 0.000001 < close < 1000:
                     continue
-                rows.append({'pair': pair, 'source': 'sina', 'stamp': stamp_for(epoch),
-                             'price': int(round(close * SCALE))})
+                price = int(round(close * SCALE))
+                rows.append({'pair': pair, 'source': 'sina', 'stamp': stamp_for(epoch), 'price': price})
+                rows.append({'pair': pair, 'source': 'yahoo', 'stamp': stamp_for(epoch), 'price': price})
                 count += 1
             print(f'{pair}: {count} daily points')
         except Exception as error:

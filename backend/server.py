@@ -51,7 +51,10 @@ class Application:
         init_db(path)
 
     def collect(self):
+        disabled = {item.strip() for item in os.getenv('COLLECT_SOURCES', '').split(',') if item.strip()}
         for source in SOURCES:
+            if disabled and source not in disabled:
+                continue
             self.collect_source(source)
         if not self.demo:
             dispatch(self.path, self.sender)

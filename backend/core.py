@@ -31,6 +31,8 @@ SOURCES = {
                  'stale_after': 300, 'accept_age': 900},
     'cnh':      {'label': '新浪离岸', 'bank': '新浪财经·离岸', 'color': '#f57c00',
                  'stale_after': 300, 'accept_age': 900},
+    'yahoo':    {'label': 'Yahoo Finance', 'bank': 'Yahoo Finance', 'color': '#8e44ad',
+                 'stale_after': 300, 'accept_age': 900},
     'daily':    {'label': '每日中间价', 'bank': '公开汇率日更', 'color': '#757575',
                  'stale_after': 172800, 'accept_age': 172800},
 }

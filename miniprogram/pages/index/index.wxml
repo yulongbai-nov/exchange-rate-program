@@ -7,7 +7,6 @@
   <scroll-view class="chips" scroll-x="true" enhanced="true" show-scrollbar="false">
     <view wx:for="{{pairsInfo}}" wx:key="pair" class="chip {{pair === item.pair ? 'active' : ''}}" data-pair="{{item.pair}}" bindtap="pairTap">{{item.pair}}</view>
   </scroll-view>
-  <view class="row ranges"><view wx:for="{{ranges}}" wx:key="*this" class="range {{rangeIndex === index ? 'active' : ''}}" data-index="{{index}}" bindtap="rangeTap">{{item}}</view></view>
   <view class="card quote">
     <view class="row"><text class="muted">{{quoteLabel}}</text><text class="tag">{{quoteStale ? '报价过期' : '结汇参考'}}</text></view>
     <view class="price">{{quotePrice}}<text class="unit"> {{unitLabel}}</text></view>
@@ -20,6 +19,7 @@
   <view wx:if="{{tab === 'chart'}}">
     <view class="card">
       <view class="chart-head"><text class="section">汇率走势</text><text class="muted">{{pairLabel}} · {{rangeLabel}}</text></view>
+      <view class="row ranges"><view wx:for="{{ranges}}" wx:key="*this" class="range {{rangeIndex === index ? 'active' : ''}}" data-index="{{index}}" bindtap="rangeTap">{{item}}</view></view>
       <ec-canvas id="rateChart" canvas-id="rate-chart" ec="{{ec}}"></ec-canvas>
       <view wx:if="{{!pointCount}}" class="empty">该时段暂无数据，历史记录从采集开始积累</view>
       <button class="toggle" bindtap="reverseChange">{{reverse ? '正向换算：1 外币 = ? 人民币' : '反向换算：1 人民币 = ? 外币'}}</button>

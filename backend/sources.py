@@ -3,6 +3,7 @@ import json
 import re
 import time
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
 from backend.core import PAIRS, SCALE, TZ, parse_boc_table, source_meta
@@ -10,6 +11,8 @@ from backend.core import PAIRS, SCALE, TZ, parse_boc_table, source_meta
 BOC_URL = 'https://www.boc.cn/sourcedb/whpj/'
 SINA_URL = 'https://hq.sinajs.cn/list=%s'
 DAILY_URL = 'https://open.er-api.com/v6/latest/USD'
+YAHOO_URL = 'https://query1.finance.yahoo.com/v8/finance/chart/%s?interval=5m&range=1d'
+YAHOO_TIMEOUT = 8
 
 SINA_SYMBOLS = {
     'USD': 'fx_susdcny', 'EUR': 'fx_seurcny', 'GBP': 'fx_sgbpcny', 'JPY': 'fx_sjpycny',
@@ -96,6 +99,35 @@ def _daily():
     return result
 
 
+def _yahoo_pair(pair):
+    symbol = 'CNY=X' if pair == 'USD' else pair + 'CNY=X'
+    payload = json.loads(_get(YAHOO_URL % symbol, timeout=YAHOO_TIMEOUT).decode('utf-8'))
+    result = payload['chart']['result'][0]
+    meta = result.get('meta') or {}
+    closes = (result.get('indicators', {}).get('quote') or [{}])[0].get('close') or []
+    price = next((value for value in reversed(closes) if value), meta.get('regularMarketPrice'))
+    epoch = meta.get('regularMarketTime')
+    if not price or not epoch or not 0.000001 < float(price) < 1000:
+        raise ValueError('Yahoo 行情不可用')
+    stamp = datetime.fromtimestamp(int(epoch), TZ).isoformat()
+    return pair, (int(round(float(price) * SCALE)), stamp)
+
+
+def _yahoo():
+    result = {}
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        futures = {pair: pool.submit(_yahoo_pair, pair) for pair in PAIRS}
+        for pair, future in futures.items():
+            try:
+                pair, quote = future.result(timeout=YAHOO_TIMEOUT + 4)
+                result[pair] = quote
+            except Exception:
+                continue
+    if not result:
+        raise ValueError('Yahoo 行情不可用')
+    return result
+
+
 def fetch_all(source):
     """Return {pair: (integer price, ISO stamp)} for one source."""
     source_meta(source)
@@ -108,4 +140,6 @@ def fetch_all(source):
         return _cached('cnh', 20, lambda: _sina({'USD': 'fx_susdcnh'}))
     if source == 'daily':
         return _cached('daily', 1800, _daily)
+    if source == 'yahoo':
+        return _cached('yahoo', 45, _yahoo)
     raise ValueError('未知的报价来源')

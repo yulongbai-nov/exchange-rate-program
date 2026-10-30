@@ -50,9 +50,12 @@ def main(path):
                 points.append((pair, source, stamp.isoformat(), int(round(price * SCALE)), stamp.isoformat()))
         index += 1
         stamp += step
+    # Yahoo Finance proxy line for the visual harness (slightly above market mid).
+    yahoo = [(pair, 'yahoo', stamp, int(round(price * 1.0007)), observed)
+             for pair, source, stamp, price, observed in points if source == 'sina']
     with sqlite3.connect(path) as db:
-        db.executemany('INSERT OR IGNORE INTO quotes(pair,source,stamp,price,observed) VALUES(?,?,?,?,?)', points)
-    print(f'seeded {len(points)} quotes into {path}')
+        db.executemany('INSERT OR IGNORE INTO quotes(pair,source,stamp,price,observed) VALUES(?,?,?,?,?)', points + yahoo)
+    print(f'seeded {len(points) + len(yahoo)} quotes into {path}')
 
 
 if __name__ == '__main__':

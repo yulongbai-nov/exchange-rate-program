@@ -35,6 +35,23 @@ curl http://127.0.0.1:8000/health
 
 界面为 Yahoo Finance 风格：多色折线（无数据点）、右侧 y 轴、1D 前收虚线、时间范围 `1D/5D/1M/6M/1Y/Max`、双指缩放/拖动、图例点选显隐、反向换算按钮（`1 外币 = x CNY` ⇄ `1 人民币 = x 外币`）。图表用开源 Apache ECharts + echarts-for-weixin 适配层，许可证见 `miniprogram/components/ec-canvas/THIRD_PARTY.md`。
 
+## 历史数据预填
+
+首次部署时数据库是空的，曲线会很难看。仓库内置 `data/history-seed.json.gz`（约 560KB，**80,265 条日线**）：
+
+- 来源 1：Yahoo Finance 近 10 年日收盘价 → 写入 `sina`（市场行情代理）
+- 来源 2：ECB 参考汇率（frankfurter.app）近 10 年 → 写入 `daily`（每日参考代理）
+- 覆盖 16 个 CNY 货币对（RUB 历史稀疏，TWD 无 ECB 参考）
+
+启用方式：云托管服务设置里加环境变量 `SEED_HISTORY=1`，启动时导入（幂等，重复启动不会重复写入）。本地重建：
+
+```bash
+python3 tools/build_history_seed.py     # 重新生成 data/history-seed.json.gz
+SEED_HISTORY=1 python3 -m backend.server --db .data/rates.sqlite3
+```
+
+> 历史数据是**日线代理**，不是中行牌价原始历史；用于让 1Y/Max 曲线可读，不代表当时银行实际结汇价。
+
 ## 本地验证（部署前）
 
 ```bash

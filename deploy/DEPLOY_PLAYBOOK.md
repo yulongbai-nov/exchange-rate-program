@@ -186,6 +186,16 @@ NODE_PATH=~/dsh-browser/tools/node_modules node tools/cdp_shot.js
 `miniprogram-ci` 的 `preview` 生成**预览二维码**（项目根目录脚本示例见 `docs/screenshots/preview-qr.png`），
 扫码即可先验证小程序，等后台重新扫码登录后再正式设为体验版。
 
+## 8.6 历史数据预填（让曲线一开始就可读）
+
+产物：`data/history-seed.json.gz`（80,265 条日线，约 560KB），由 `tools/build_history_seed.py` 生成
+（Yahoo Finance 10 年日收盘 → `sina`；ECB 参考汇率 → `daily`）。
+
+- 云托管服务设置加环境变量 `SEED_HISTORY=1`，启动时幂等导入（主键去重，重复启动不会写重）
+- 导入日志：`history seed: 80265 rows scanned, N inserted, M total quotes`
+- `GET /health` 的 `db_quotes` 会从个位数跳到 8 万级
+- 说明：这是日线代理，不是中行原始牌价；日线只能让 1Y/Max 曲线可读，盘中细节仍靠实时采集积累
+
 ## 9. 踩坑全表
 
 | # | 现象 | 根因 | 处理 |

@@ -18,6 +18,8 @@ RUN python -c "import ssl; from zoneinfo import ZoneInfo; assert ssl.create_defa
 
 WORKDIR /app
 COPY --chown=rates:rates backend/ ./backend/
+# Bundled daily history imported once when SEED_HISTORY=1 (see backend/history_seed.py).
+COPY --chown=rates:rates data/ ./data/
 
 USER rates
 EXPOSE 8000

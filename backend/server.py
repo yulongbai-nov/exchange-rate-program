@@ -20,6 +20,7 @@ from backend.core import (DEFAULT_PAIR, DEFAULT_SOURCE, PAIRS, SCALE, SOURCES, c
                           connect, history, init_db, now, pair_meta, record_quote, source_meta,
                           summarize, validate_rule)
 from backend.integrations import WechatLoginError, WechatSender, analyze, dispatch, fetch_quote, quote_failure, wx_login
+from backend.history_seed import import_seed
 from backend.sources import fetch_all
 from backend.storage import BackupManager
 
@@ -340,6 +341,8 @@ def main():
     app.backup = backup
     if backup is not None and backup.start():
         LOG.info('object storage backup enabled (every %ss)', backup.interval)
+    if not args.demo and os.getenv('SEED_HISTORY', '').strip() in ('1', 'true', 'yes'):
+        import_seed(path)
     if args.demo:
         # Explicit synthetic history, isolated from production data.
         with connect(path) as db:

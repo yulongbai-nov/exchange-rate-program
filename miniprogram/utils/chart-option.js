@@ -8,12 +8,22 @@
     return String(value).padStart(2, '0')
   }
 
+  var RANGES = [
+    { id: '1d', label: '1D', days: 1, interval: 300 },
+    { id: '5d', label: '5D', days: 5, interval: 1800 },
+    { id: '1m', label: '1M', days: 30, interval: 7200 },
+    { id: '6m', label: '6M', days: 180, interval: 43200 },
+    { id: '1y', label: '1Y', days: 365, interval: 86400 },
+    { id: 'max', label: 'Max', days: 3650, interval: 604800 }
+  ]
+
   function labelFor(iso, interval) {
     var date = new Date(iso)
     if (isNaN(date.getTime())) return ''
     var beijing = new Date(date.getTime() + 8 * 3600000)
     var y = beijing.getUTCFullYear(), m = pad(beijing.getUTCMonth() + 1), d = pad(beijing.getUTCDate())
     var hh = pad(beijing.getUTCHours()), mm = pad(beijing.getUTCMinutes())
+    if (interval >= 604800) return String(beijing.getUTCFullYear()).slice(2) + '/' + m
     if (interval >= 86400) return m + '/' + d
     if (interval >= 3600) return m + '/' + d + ' ' + hh + ':00'
     return hh + ':' + mm
@@ -104,5 +114,5 @@
     return option
   }
 
-  return { buildOption: buildOption, labelFor: labelFor }
+  return { buildOption: buildOption, labelFor: labelFor, RANGES: RANGES }
 })

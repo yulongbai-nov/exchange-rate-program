@@ -295,7 +295,7 @@ def chart_series(path, pair, sources, start, end, interval=60):
     for source in sources:
         source_meta(source)
     a, b = _range(start, end)
-    interval = max(30, min(int(interval or 60), 86400))
+    interval = max(30, min(int(interval or 60), 2592000))
     with connect(path) as db:
         rows = db.execute('SELECT source,stamp,price FROM quotes WHERE pair=? AND stamp>=? AND stamp<=? '
                           'AND source IN (%s) ORDER BY stamp' % ','.join('?' * len(sources)),

@@ -60,14 +60,8 @@
 <script>
 (function () {
   var state = { pair: 'USD', pairLabel: '美元', range: '1d', reverse: false, token: null, pairs: [], chart: null, table: null };
-  var RANGES = [
-    { id: '1d', label: '1D', days: 1, interval: 300 },
-    { id: '5d', label: '5D', days: 5, interval: 1800 },
-    { id: '1m', label: '1M', days: 30, interval: 7200 },
-    { id: '6m', label: '6M', days: 180, interval: 21600 },
-    { id: '1y', label: '1Y', days: 365, interval: 86400 },
-    { id: 'max', label: 'Max', days: 30, interval: 7200 }
-  ];
+  var RANGES = ChartOption.RANGES;
+
   var chart = echarts.init(document.getElementById('chart'), null, { renderer: 'canvas' });
 
   function api(path, options) {

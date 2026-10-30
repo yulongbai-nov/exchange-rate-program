@@ -14,10 +14,13 @@
 | 1D | 1 分钟（数据不足时用采集原始 tick） |
 | 5D | 5 分钟 |
 | 1M | 15 分钟 ~ 1 小时 |
-| 6M / 1Y | 1 小时 / 1 天 |
-| Max | 1 天 / 1 月 |
+| 6M | 12 小时（180 天 × 2/天） |
+| 1Y | 1 天 |
+| Max | 1 周（10 年 × 52/年，约 520 个点） |
 
-服务端：`/api/history?pair=&sources=&from=&to=&interval=`，返回聚合后的线数据；
+历史：`data/history-seed.json.gz` 预填 10 年日线（Yahoo + ECB 代理），`SEED_HISTORY=1` 时启动导入。
+
+服务端：`/api/chart?pair=&sources=&from=&to=&interval=`，返回聚合后的线数据；
 放大后前端可请求更细粒度，不必一次拉全部。
 
 ## 线型（照 Yahoo 抄）

@@ -9,14 +9,7 @@ function beijingDate(date) {
   return { date: `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`, time: `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}` }
 }
 
-const RANGES = [
-  { id: '1d', label: '1D', days: 1, interval: 300 },
-  { id: '5d', label: '5D', days: 5, interval: 1800 },
-  { id: '1m', label: '1M', days: 30, interval: 7200 },
-  { id: '6m', label: '6M', days: 180, interval: 21600 },
-  { id: '1y', label: '1Y', days: 365, interval: 86400 },
-  { id: 'max', label: 'Max', days: 30, interval: 7200 }
-]
+const RANGES = ChartOption.RANGES
 
 Page({
   data: {

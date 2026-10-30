@@ -1,13 +1,13 @@
 <view class="page">
-  <view class="eyebrow">BOC · USD / CNY</view>
+  <view class="eyebrow">{{sourceId === 'boc' ? 'BOC' : 'SINA'}} · USD / CNY</view>
   <view class="heading">美元结汇观察</view>
   <view class="subtitle">关注每一次变化，把握你的结汇时机</view>
   <view wx:if="{{status.demo}}" class="warn">演示模式 · 全部行情为模拟数据，不发送微信通知</view>
   <view wx:if="{{error}}" class="warn error">{{error}} <text bindtap="refresh">点击重试</text></view>
   <view class="card quote">
-    <view class="row"><text class="muted">中国银行 · 美元现汇买入价</text><text class="tag">结汇参考</text></view>
+    <view class="row"><picker range="{{sources}}" range-key="label" value="{{sourceIndex}}" bindchange="sourceChange"><view class="muted">{{sourceLabel}} ▾</view></picker><text class="tag">结汇参考</text></view>
     <view class="price">{{quotePrice}}<text class="unit"> 元</text></view>
-    <view class="muted">1 美元兑人民币 · 已从每 100 美元牌价换算</view>
+    <view class="muted">{{sourceNote}}</view>
     <view class="divider"></view>
     <view class="row muted"><text>{{quoteTime}}</text><text bindtap="refresh">刷新 ↻</text></view>
     <view wx:if="{{status.stale}}" class="error small">报价已过期或尚未取得，请勿当作实时价格</view>
@@ -44,5 +44,5 @@
     <view class="card"><view class="section">我的监测 <text class="muted">{{rules.length}} / 20</text></view><view wx:if="{{!rules.length}}" class="empty">还没有监测规则</view><view wx:for="{{rules}}" wx:key="id" class="rule"><view class="row"><text>{{item.kind === 'movement' ? '波动 ±' : (item.direction === 'above' ? '目标 ≥' : '目标 ≤')}} {{item.amount}} 元</text><text class="error small" data-id="{{item.id}}" bindtap="deleteRule">删除</text></view><view class="muted">每天 {{item.start}} – {{item.end}}</view></view></view>
   </view>
   <view wx:if="{{tab === 'alerts'}}" class="card"><view class="section">最近触发记录</view><view wx:if="{{!alerts.length}}" class="empty">暂未触发提醒</view><view wx:for="{{alerts}}" wx:key="id" class="rule"><view class="row"><text>{{item.label}} · {{item.price}} 元</text><text class="tag">{{item.statusLabel}}</text></view><view class="muted">{{item.displayTime}}</view><view class="muted">{{item.detail}}</view></view></view>
-  <view class="footer"><view>中国银行现汇买入价 · 每 60 秒检查更新</view><view>不是现钞买入价，也不是外汇市场成交价</view></view>
+  <view class="footer"><view>{{sourceLabel}} · 每 60 秒检查更新</view><view>中行为银行牌价，新浪为公开市场行情，两者口径不同</view></view>
 </view>

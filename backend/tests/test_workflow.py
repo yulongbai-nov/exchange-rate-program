@@ -39,7 +39,7 @@ class RulesTest(unittest.TestCase):
 
     def add_rule(self, kind='movement', amount='0.01', direction='above', start='08:00', end='17:00'):
         with connect(self.path) as db:
-            db.execute('INSERT INTO rules VALUES(?,?,?,?,?,?,?,?,?)', ('r','u',kind,start,end,units(amount),direction,1,'2026-10-21T00:00:00+08:00'))
+            db.execute('INSERT INTO rules VALUES(?,?,?,?,?,?,?,?,?,?)', ('r','u',kind,start,end,units(amount),direction,1,'2026-10-21T00:00:00+08:00','boc'))
 
     def quote(self, price, stamp):
         return record_quote(self.path,units(price),stamp,datetime.fromisoformat(stamp))
@@ -245,6 +245,40 @@ class HttpTest(unittest.TestCase):
                 self.assertIn('token',body)
                 self.assertNotIn('never-return-this',json.dumps(body))
                 self.assertEqual(self.call('/api/status',token=body['token'])[0],200)
+
+
+class SourcesTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.path = str(Path(self.tmp.name)/'sources.db')
+        init_db(self.path)
+        with connect(self.path) as db:
+            db.execute("INSERT INTO users VALUES('u','openid',0)")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_history_is_filtered_per_source(self):
+        record_quote(self.path, units('6.70'), '2026-10-22T08:00:00+08:00',
+                     datetime(2026,10,22,8,tzinfo=TZ), source='boc')
+        record_quote(self.path, units('7.10'), '2026-10-22T08:00:00+08:00',
+                     datetime(2026,10,22,8,tzinfo=TZ), source='sina_cny')
+        self.assertEqual(len(history(self.path,'2026-10-22T00:00:00+08:00','2026-10-23T00:00:00+08:00','boc')), 1)
+        self.assertEqual(history(self.path,'2026-10-22T00:00:00+08:00','2026-10-23T00:00:00+08:00','sina_cny')[0]['price'], 7.1)
+
+    def test_rules_only_trigger_for_their_source(self):
+        with connect(self.path) as db:
+            db.execute('INSERT INTO rules VALUES(?,?,?,?,?,?,?,?,?,?)',
+                       ('r','u','target','00:00','23:59',units('6.7'),'above',1,'2026-10-21T00:00:00+08:00','sina_cny'))
+        self.assertEqual(record_quote(self.path, units('6.8'), '2026-10-22T09:00:00+08:00',
+                                      datetime(2026,10,22,9,tzinfo=TZ), source='boc'), 0)
+        self.assertEqual(record_quote(self.path, units('6.8'), '2026-10-22T09:01:00+08:00',
+                                      datetime(2026,10,22,9,1,tzinfo=TZ), source='sina_cny'), 1)
+
+    def test_validate_rule_rejects_unknown_source(self):
+        with self.assertRaises(ValueError):
+            validate_rule({'kind':'movement','start':'00:00','end':'23:59','amount':'.01','source':'nope'})
+        self.assertEqual(validate_rule({'kind':'movement','start':'00:00','end':'23:59','amount':'.01'})[-1], 'boc')
 
 
 if __name__ == '__main__':

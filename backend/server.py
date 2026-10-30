@@ -16,8 +16,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-from backend.core import SCALE, connect, history, init_db, now, record_quote, summarize, validate_rule
+from backend.core import DEFAULT_SOURCE, SCALE, SOURCES, connect, history, init_db, now, record_quote, source_meta, summarize, validate_rule
 from backend.integrations import WechatLoginError, WechatSender, analyze, dispatch, fetch_quote, quote_failure, wx_login
+from backend.sources import fetch as fetch_source
 from backend.storage import BackupManager
 
 LOG = logging.getLogger('rates')
@@ -30,23 +31,34 @@ class Application:
         self.collect_error = None
         self.sender = WechatSender()
         self.backup = None
+        self.source_status = {source: {'last_attempt': None, 'error': None} for source in SOURCES}
         init_db(path)
 
     def collect(self):
-        self.last_attempt = now().isoformat()
+        for source in SOURCES:
+            self.collect_source(source)
+        if not self.demo:
+            dispatch(self.path,self.sender)
+
+    def collect_source(self, source):
+        status = self.source_status[source]
+        status['last_attempt'] = now().isoformat()
         try:
             if self.demo:
+                if source != 'boc':
+                    return
                 stamp = now().replace(microsecond=0).isoformat()
                 price = round((6.85 + .025 * math.sin(time.time()/900))*SCALE)
             else:
-                price, stamp = fetch_quote()
-            record_quote(self.path,price,stamp)
-            self.collect_error = None
+                price, stamp = fetch_source(source)
+            record_quote(self.path, price, stamp, source=source)
+            status['error'] = None
         except Exception as error:
-            self.collect_error = quote_failure(error)
-            LOG.warning('quote collection failed: %s', self.collect_error)
-        if not self.demo:
-            dispatch(self.path,self.sender)
+            status['error'] = quote_failure(error) if source == 'boc' else '行情获取失败：' + type(error).__name__
+            LOG.warning('quote collection failed (%s): %s', source, status['error'])
+        if source == 'boc':
+            self.last_attempt = status['last_attempt']
+            self.collect_error = status['error']
 
     def user(self, token):
         with connect(self.path) as db:
@@ -54,9 +66,15 @@ class Application:
         return row['user_id'] if row else None
 
     def api(self, method, path, query, body, token):
+        def requested_source():
+            candidate = (query.get('source') or [DEFAULT_SOURCE])[0]
+            source_meta(candidate)  # raise for unknown sources
+            return candidate
+
         if path == '/health' and method == 'GET':
             health = {'ok':True,'demo':self.demo,'last_attempt':self.last_attempt,
-                      'collection_error':self.collect_error,'instance':socket.gethostname()}
+                      'collection_error':self.collect_error,'instance':socket.gethostname(),
+                      'source_status':self.source_status}
             if self.backup is not None:
                 status = self.backup.status()
                 health['backup'] = status
@@ -87,13 +105,32 @@ class Application:
         uid = self.user(token)
         if not uid:
             return 401, {'error':'请先登录'}
-        if path == '/api/status' and method == 'GET':
+        if path == '/api/sources' and method == 'GET':
             with connect(self.path) as db:
-                q = db.execute('SELECT * FROM quotes ORDER BY stamp DESC LIMIT 1').fetchone()
+                rows = db.execute('SELECT source,stamp,price FROM quotes WHERE stamp IN '
+                                  '(SELECT max(stamp) FROM quotes GROUP BY source)').fetchall()
+            latest = {row['source']: row for row in rows}
+            payload = []
+            for source, meta in SOURCES.items():
+                row = latest.get(source)
+                stale = True
+                if row:
+                    stale = (now()-datetime.fromisoformat(row['stamp'])).total_seconds() > meta['stale_after']
+                payload.append({'id':source, 'label':meta['label'], 'stale_after':meta['stale_after'],
+                                'stale':stale, 'error':self.source_status[source]['error'],
+                                'last_attempt':self.source_status[source]['last_attempt'],
+                                'quote':{'price':row['price']/SCALE,'stamp':row['stamp']} if row else None})
+            return {'sources':payload, 'default':DEFAULT_SOURCE}
+        if path == '/api/status' and method == 'GET':
+            source = requested_source()
+            meta = SOURCES[source]
+            with connect(self.path) as db:
+                q = db.execute('SELECT * FROM quotes WHERE source=? ORDER BY stamp DESC LIMIT 1',(source,)).fetchone()
                 credits = db.execute('SELECT credits FROM users WHERE id=?',(uid,)).fetchone()[0]
-            stale = not q or (now()-datetime.fromisoformat(q['stamp'])).total_seconds() > 600
+            stale = not q or (now()-datetime.fromisoformat(q['stamp'])).total_seconds() > meta['stale_after']
             return {'demo':self.demo, 'quote': {'price':q['price']/SCALE,'stamp':q['stamp']} if q else None,
-                    'stale':stale,'error':self.collect_error,'poll_seconds':60,
+                    'source':source, 'source_label':meta['label'], 'stale_after':meta['stale_after'],
+                    'stale':stale,'error':self.source_status[source]['error'],'poll_seconds':60,
                     'notifications_ready':not self.demo and self.sender.configured(),
                     'template_id':os.getenv('WX_TEMPLATE_ID',''),'subscription_credits':credits}
         if path == '/api/subscriptions' and method == 'POST':
@@ -111,6 +148,7 @@ class Application:
                     rows = [dict(r) for r in db.execute('SELECT * FROM rules WHERE user_id=? ORDER BY created DESC',(uid,))]
                 for row in rows:
                     row['amount'] /= SCALE
+                    row['source_label'] = SOURCES.get(row.get('source'), {}).get('label', row.get('source'))
                     row.pop('user_id')
                 return {'rules':rows}
             if method == 'POST':
@@ -119,7 +157,7 @@ class Application:
                 with connect(self.path) as db:
                     if db.execute('SELECT count(*) FROM rules WHERE user_id=?',(uid,)).fetchone()[0] >= 20:
                         raise ValueError('最多保留 20 条监测规则')
-                    db.execute('INSERT INTO rules(id,user_id,kind,start,end,amount,direction,created) VALUES(?,?,?,?,?,?,?,?)',
+                    db.execute('INSERT INTO rules(id,user_id,kind,start,end,amount,direction,source,created) VALUES(?,?,?,?,?,?,?,?,?)',
                                (rid,uid,*values,now().isoformat()))
                 return {'id':rid}
         if path.startswith('/api/rules/') and method == 'DELETE':
@@ -128,12 +166,15 @@ class Application:
             return (200 if deleted else 404), {'ok':bool(deleted)}
         if path == '/api/alerts' and method == 'GET':
             with connect(self.path) as db:
-                rows = [dict(r) for r in db.execute('SELECT id,side,price,stamp,status,detail FROM alerts WHERE user_id=? ORDER BY id DESC LIMIT 50',(uid,))]
+                rows = [dict(r) for r in db.execute('SELECT a.id,a.side,a.price,a.stamp,a.status,a.detail,'
+                                                    'r.source AS source FROM alerts a LEFT JOIN rules r ON r.id=a.rule_id '
+                                                    'WHERE a.user_id=? ORDER BY a.id DESC LIMIT 50',(uid,))]
             for row in rows:
                 row['price'] /= SCALE
+                row['source_label'] = SOURCES.get(row.get('source'), {}).get('label', '')
             return {'alerts':rows}
         if path in ('/api/history','/api/analysis') and method == 'GET':
-            points = history(self.path,query.get('start',[''])[0],query.get('end',[''])[0])
+            points = history(self.path,query.get('start',[''])[0],query.get('end',[''])[0],requested_source())
             if path.endswith('analysis'):
                 return analyze(summarize(points))
             # Min/max buckets preserve local extrema; limit transport size, not analysis data.
@@ -225,7 +266,7 @@ def main():
                 for i in range(240):
                     stamp = (end-timedelta(minutes=240-i)).isoformat()
                     p = round((6.85+.025*math.sin((end.timestamp()-(240-i)*60)/900))*SCALE)
-                    db.execute('INSERT INTO quotes VALUES(?,?,?)',(stamp,p,end.isoformat()))
+                    db.execute('INSERT INTO quotes(source,stamp,price,observed) VALUES(?,?,?,?)',('boc',stamp,p,end.isoformat()))
     def worker():
         while True:
             try:

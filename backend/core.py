@@ -10,6 +10,23 @@ from zoneinfo import ZoneInfo
 TZ = ZoneInfo('Asia/Shanghai')
 SCALE = 1_000_000
 
+# Quote sources shown in the mini program. `stale_after` decides when the UI
+# warns that the latest quote is old; bank quotes are published much less often
+# than the public CNY/CNH market feeds, so their threshold is larger.
+SOURCES = {
+    'boc':      {'label': '中行现汇买入价', 'bank': '中国银行',       'stale_after': 3600},
+    'sina_cny': {'label': '在岸人民币',     'bank': '新浪财经·在岸', 'stale_after': 300},
+    'sina_cnh': {'label': '离岸人民币',     'bank': '新浪财经·离岸', 'stale_after': 300},
+}
+DEFAULT_SOURCE = 'boc'
+
+
+def source_meta(source):
+    meta = SOURCES.get(source or DEFAULT_SOURCE)
+    if meta is None:
+        raise ValueError('未知的报价来源')
+    return meta
+
 
 def now():
     return datetime.now(TZ)
@@ -84,12 +101,13 @@ def init_db(path):
     with connect(path) as db:
         db.executescript('''
         PRAGMA journal_mode=WAL;
-        CREATE TABLE IF NOT EXISTS quotes(stamp TEXT PRIMARY KEY, price INTEGER NOT NULL, observed TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS quotes(source TEXT NOT NULL DEFAULT 'boc', stamp TEXT NOT NULL,
+          price INTEGER NOT NULL, observed TEXT NOT NULL, PRIMARY KEY(source, stamp));
         CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, openid TEXT UNIQUE NOT NULL, credits INTEGER NOT NULL DEFAULT 0);
         CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), expires TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS rules(id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id), kind TEXT NOT NULL,
           start TEXT NOT NULL, end TEXT NOT NULL, amount INTEGER NOT NULL, direction TEXT NOT NULL,
-          enabled INTEGER NOT NULL DEFAULT 1, created TEXT NOT NULL);
+          enabled INTEGER NOT NULL DEFAULT 1, created TEXT NOT NULL, source TEXT NOT NULL DEFAULT 'boc');
         CREATE TABLE IF NOT EXISTS rule_days(rule_id TEXT NOT NULL REFERENCES rules(id) ON DELETE CASCADE,
           day TEXT NOT NULL, baseline INTEGER NOT NULL, PRIMARY KEY(rule_id,day));
         CREATE TABLE IF NOT EXISTS alerts(id INTEGER PRIMARY KEY AUTOINCREMENT, rule_id TEXT NOT NULL REFERENCES rules(id) ON DELETE CASCADE,
@@ -97,6 +115,20 @@ def init_db(path):
           stamp TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', detail TEXT NOT NULL DEFAULT '',
           UNIQUE(rule_id,day,side));
         ''')
+        # Migrate databases created before multiple quote sources existed.
+        quote_columns = [row[1] for row in db.execute('PRAGMA table_info(quotes)')]
+        if 'source' not in quote_columns:
+            db.executescript('''
+            ALTER TABLE quotes RENAME TO quotes_legacy;
+            CREATE TABLE quotes(source TEXT NOT NULL DEFAULT 'boc', stamp TEXT NOT NULL,
+              price INTEGER NOT NULL, observed TEXT NOT NULL, PRIMARY KEY(source, stamp));
+            INSERT INTO quotes(source,stamp,price,observed)
+              SELECT 'boc',stamp,price,observed FROM quotes_legacy;
+            DROP TABLE quotes_legacy;
+            ''')
+        rule_columns = [row[1] for row in db.execute('PRAGMA table_info(rules)')]
+        if 'source' not in rule_columns:
+            db.execute("ALTER TABLE rules ADD COLUMN source TEXT NOT NULL DEFAULT 'boc'")
 
 
 def validate_rule(body):
@@ -111,7 +143,9 @@ def validate_rule(body):
     direction = body.get('direction', 'above')
     if direction not in ('above', 'below'):
         raise ValueError('目标方向无效')
-    return kind, body['start'], body['end'], units(body.get('amount')), direction
+    source = body.get('source') or DEFAULT_SOURCE
+    source_meta(source)
+    return kind, body['start'], body['end'], units(body.get('amount')), direction, source
 
 
 def window_day(rule, stamp):
@@ -125,17 +159,19 @@ def window_day(rule, stamp):
     return None
 
 
-def record_quote(path, price, stamp, clock=None):
+def record_quote(path, price, stamp, clock=None, source=DEFAULT_SOURCE):
     clock = clock or now()
+    source_meta(source)
     source_time = datetime.fromisoformat(stamp)
     # Never send current alerts from old, future, duplicate or out-of-order quotes.
     with connect(path) as db:
-        latest = db.execute('SELECT max(stamp) FROM quotes').fetchone()[0]
-        inserted = db.execute('INSERT OR IGNORE INTO quotes VALUES(?,?,?)', (stamp, price, clock.isoformat())).rowcount
+        latest = db.execute('SELECT max(stamp) FROM quotes WHERE source=?', (source,)).fetchone()[0]
+        inserted = db.execute('INSERT OR IGNORE INTO quotes(source,stamp,price,observed) VALUES(?,?,?,?)',
+                              (source, stamp, price, clock.isoformat())).rowcount
         if not inserted or (latest and stamp <= latest) or not -60 <= (clock-source_time).total_seconds() <= 600:
             return 0
         count = 0
-        for rule in db.execute('SELECT * FROM rules WHERE enabled=1').fetchall():
+        for rule in db.execute('SELECT * FROM rules WHERE enabled=1 AND source=?', (source,)).fetchall():
             if stamp < rule['created']:
                 continue
             day = window_day(rule, source_time)
@@ -159,16 +195,17 @@ def record_quote(path, price, stamp, clock=None):
         return count
 
 
-def history(path, start, end):
+def history(path, start, end, source=DEFAULT_SOURCE):
     try:
         a, b = datetime.fromisoformat(start), datetime.fromisoformat(end)
         if a.tzinfo is None or b.tzinfo is None or a > b:
             raise ValueError()
     except (ValueError, TypeError):
         raise ValueError('请选择有效起止时间（含时区）') from None
+    source_meta(source)
     with connect(path) as db:
-        rows = db.execute('SELECT stamp,price FROM quotes WHERE stamp>=? AND stamp<=? ORDER BY stamp',
-                          (a.astimezone(TZ).isoformat(), b.astimezone(TZ).isoformat())).fetchall()
+        rows = db.execute('SELECT stamp,price FROM quotes WHERE source=? AND stamp>=? AND stamp<=? ORDER BY stamp',
+                          (source, a.astimezone(TZ).isoformat(), b.astimezone(TZ).isoformat())).fetchall()
     return [{'stamp': r['stamp'], 'price': r['price']/SCALE} for r in rows]
 
 

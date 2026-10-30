@@ -7,6 +7,8 @@ function beijingDate(date) {
 }
 Page({
   data: { tab: 'chart', status: {}, quotePrice: '—', quoteTime: '等待报价', error: '', rules: [], alerts: [],
+    sources: [], sourceIndex: 0, sourceId: 'boc', sourceLabel: '中行现汇买入价',
+    sourceNote: '1 美元兑人民币 · 已从每 100 美元牌价换算',
     start: '08:00', end: '17:00', kind: 'movement', amount: '0.01', directions: ['达到或高于目标价', '达到或低于目标价'],
     directionIndex: 0, pointCount: 0, stats: null, analysis: null, saving: false, chartBusy: false, aiBusy: false },
   onLoad() {
@@ -49,14 +51,32 @@ Page({
   async refresh() {
     this.setData({ error: '' })
     try {
+      await this.loadSources()
       await this.refreshStatus()
       await Promise.all([this.loadRules(), this.loadAlerts(), this.loadHistory()])
     } catch (e) { this.showError(e) }
   },
+  async loadSources() {
+    const result = await this.api('/api/sources')
+    const sources = result.sources || []
+    let index = sources.findIndex(s => s.id === this.data.sourceId)
+    if (index < 0) index = Math.max(0, sources.findIndex(s => s.id === result.default))
+    const current = sources[index] || { id: 'boc', label: '中行现汇买入价' }
+    this.setData({ sources, sourceIndex: Math.max(index, 0), sourceId: current.id, sourceLabel: current.label,
+      sourceNote: current.id === 'boc' ? '1 美元兑人民币 · 已从每 100 美元牌价换算' : '1 美元兑人民币 · 公开市场行情，非银行牌价' })
+  },
+  sourceChange(e) {
+    const source = this.data.sources[Number(e.detail.value)]
+    if (!source) return
+    this.setData({ sourceIndex: Number(e.detail.value), sourceId: source.id, sourceLabel: source.label,
+      sourceNote: source.id === 'boc' ? '1 美元兑人民币 · 已从每 100 美元牌价换算' : '1 美元兑人民币 · 公开市场行情，非银行牌价',
+      analysis: null, quotePrice: '—', quoteTime: '加载中…' })
+    this.refreshStatus().then(() => this.loadHistory()).catch(err => this.showError(err))
+  },
   async refreshStatus() {
-    const status = await this.api('/api/status')
+    const status = await this.api('/api/status?source=' + this.data.sourceId)
     this.setData({ status, quotePrice: status.quote ? status.quote.price.toFixed(4) : '—',
-      quoteTime: status.quote ? status.quote.stamp.slice(0, 19).replace('T', ' ') + ' 北京时间' : '等待中行报价' })
+      quoteTime: status.quote ? status.quote.stamp.slice(0, 19).replace('T', ' ') + ' 北京时间' : '等待' + (status.source_label || '') + '报价' })
   },
   selectTab(e) { this.setData({ tab: e.currentTarget.dataset.tab }); if (this.data.tab === 'chart') wx.nextTick(() => this.drawChart(this.points || [])); if (this.data.tab === 'alerts') this.loadAlerts().catch(e => this.showError(e)) },
   startChange(e) { this.setData({ start: e.detail.value }) },
@@ -72,7 +92,7 @@ Page({
     const d = this.data
     const start = `${d.fromDate}T${d.fromTime}:00+08:00`, end = `${d.toDate}T${d.toTime}:59+08:00`
     if (new Date(start) > new Date(end)) throw new Error('开始时间不能晚于结束时间')
-    return `?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`
+    return `?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&source=${this.data.sourceId}`
   },
   async loadHistory() {
     this.setData({ chartBusy: true, analysis: null })
@@ -102,7 +122,8 @@ Page({
     try {
       const d = this.data
       if (!(Number(d.amount) > 0 && Number(d.amount) < 100)) throw new Error('请输入大于 0、小于 100 的金额')
-      await this.api('/api/rules', 'POST', { kind: d.kind, start: d.start, end: d.end, amount: d.amount, direction: d.directionIndex === 0 ? 'above' : 'below' })
+      await this.api('/api/rules', 'POST', { kind: d.kind, start: d.start, end: d.end, amount: d.amount,
+        direction: d.directionIndex === 0 ? 'above' : 'below', source: d.sourceId })
       await this.loadRules()
       wx.showToast({ title: '规则已保存' })
     } catch (e) { this.showError(e) } finally { this.setData({ saving: false }) }
@@ -129,7 +150,8 @@ Page({
     const r = await this.api('/api/alerts')
     const names = { pending: '待发送', sending: '发送结果待核实', sent: '已请求微信发送', failed: '发送失败/未知', needs_subscription: '需重新授权', expired: '已过期' }
     const sides = { up: '上涨达标', down: '下跌达标', above: '达到目标上限', below: '达到目标下限' }
-    this.setData({ alerts: r.alerts.map(a => ({ ...a, label: sides[a.side], statusLabel: names[a.status] || a.status, displayTime: a.stamp.slice(0, 19).replace('T', ' ') })) })
+    this.setData({ alerts: r.alerts.map(a => ({ ...a, label: sides[a.side], statusLabel: names[a.status] || a.status,
+      displayTime: a.stamp.slice(0, 19).replace('T', ' ') + (a.source_label ? ' · ' + a.source_label : '') })) })
   },
   drawChart(points) {
     if (this.data.tab !== 'chart') return

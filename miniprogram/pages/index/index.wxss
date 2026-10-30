@@ -1,1 +1,20 @@
 .page{padding:40rpx 28rpx}.eyebrow{font-size:22rpx;letter-spacing:5rpx;color:#11695c;font-weight:600}.heading{font-size:52rpx;font-weight:700;margin:12rpx 0}.subtitle{font-size:25rpx;color:#73838a;margin-bottom:32rpx}.price{font-size:92rpx;letter-spacing:-3rpx;font-weight:600;margin:30rpx 0 8rpx;color:#11695c}.unit{font-size:28rpx;letter-spacing:0;font-weight:400;color:#71818a}.tabs{display:flex;margin:28rpx 0;gap:12rpx}.tab{flex:1;text-align:center;padding:20rpx 0;color:#71818a}.active{color:#11695c;border-bottom:5rpx solid #11695c;font-weight:600}.chart{width:100%;height:420rpx;margin:20rpx 0}.choices{display:flex;justify-content:space-between;margin:28rpx 0}.choices label{font-size:26rpx}.field input{width:180rpx;text-align:right}.subscribe{margin-top:18rpx;background:#e5f3ec;color:#11695c}.rule{padding:24rpx 0;border-bottom:1rpx solid #edf1f2}.analysis{margin:30rpx 0}.analysis-text{white-space:pre-wrap;line-height:1.9;margin-top:20rpx}.footer{text-align:center;font-size:22rpx;line-height:1.9;color:#859397;margin:32rpx 0}
+
+/* v2: pair chips, range presets, sources table */
+.chips { white-space: nowrap; margin: 8rpx 0 4rpx; }
+.chip { display: inline-block; padding: 8rpx 20rpx; margin-right: 12rpx; border-radius: 26rpx; background: #eef4f3; color: #2c4a4f; font-size: 24rpx; }
+.chip.active { background: #11695c; color: #fff; }
+.ranges { display: flex; gap: 26rpx; margin: 14rpx 4rpx 2rpx; }
+.range { font-size: 24rpx; color: #7b8e96; padding-bottom: 4rpx; }
+.range.active { color: #11695c; font-weight: 600; border-bottom: 4rpx solid #11695c; }
+.chart-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8rpx; }
+.toggle { width: 100%; margin: 8rpx 0; background: #f4f8f6; color: #11695c; border: 1rpx solid #d6e4e0; border-radius: 16rpx; font-size: 24rpx; }
+.source-table { margin-top: 8rpx; }
+.source-row { display: grid; grid-template-columns: 2.2fr 1.2fr 1fr 1.4fr; align-items: center; padding: 12rpx 0; border-top: 1rpx solid #eef2f1; font-size: 22rpx; color: #24424a; text-align: right; }
+.source-row.head { border-top: none; color: #7b8e96; font-size: 20rpx; }
+.source-row > text:first-child, .source-name { text-align: left; display: flex; align-items: center; }
+.sw { width: 18rpx; height: 6rpx; border-radius: 3rpx; margin-right: 10rpx; flex: 0 0 auto; }
+.up { color: #1e8e3e; }
+.down { color: #c0392b; }
+
+ec-canvas { display: block; width: 100%; height: 520rpx; }

@@ -351,6 +351,8 @@ def main():
                     db.execute('INSERT INTO quotes(pair,source,stamp,price,observed) VALUES(?,?,?,?,?)',
                                ('USD', DEFAULT_SOURCE, stamp, price, end.isoformat()))
 
+    if os.getenv('DISABLE_COLLECTOR', '').strip() in ('1', 'true', 'yes'):
+        LOG.info('collector disabled by DISABLE_COLLECTOR')
     def worker():
         interval = max(15, int(os.getenv('COLLECT_SECONDS', '30')))
         while True:
@@ -360,7 +362,10 @@ def main():
                 LOG.warning('collector cycle failed')
             time.sleep(interval)
 
-    threading.Thread(target=worker, daemon=True).start()
+    if os.getenv('DISABLE_COLLECTOR', '').strip() in ('1', 'true', 'yes'):
+        pass
+    else:
+        threading.Thread(target=worker, daemon=True).start()
     logging.basicConfig(level=logging.INFO)
     LOG.info('mode=%s port=%s instance=%s', 'SYNTHETIC DEMO' if args.demo else 'LIVE', args.port, socket.gethostname())
 

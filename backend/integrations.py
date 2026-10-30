@@ -8,7 +8,7 @@ import urllib.parse
 import urllib.request
 from datetime import datetime
 
-from backend.core import SCALE, SOURCES, now, parse_boc, connect
+from backend.core import PAIRS, SCALE, SOURCES, now, parse_boc, connect
 
 
 def quote_failure(error):
@@ -131,7 +131,7 @@ class WechatSender:
         mapping = json.loads(os.environ['WX_TEMPLATE_MAPPING'])
         label = SOURCES.get(alert.get('source'), {}).get('bank', '中国银行')
         values = {'price': f'{alert["price"]/SCALE:.4f}', 'time': alert['stamp'][:19].replace('T',' '),
-                  'bank':label, 'currency':'美元兑人民币',
+                  'bank':label, 'currency':PAIRS.get(alert.get('pair'), {}).get('label', '美元') + '兑人民币',
                   'title':'美元结汇价提醒', 'reason': {'up':'涨幅达标','down':'跌幅达标','above':'达到目标上限','below':'达到目标下限'}[alert['side']]}
         if not mapping or any(v not in values for v in mapping.values()):
             raise ValueError('微信模板字段映射无效')
@@ -148,7 +148,7 @@ def dispatch(path, sender):
     if not sender.configured():
         return
     with connect(path) as db:
-        alerts = db.execute("SELECT a.*, u.openid, u.credits, r.source AS source FROM alerts a "
+        alerts = db.execute("SELECT a.*, u.openid, u.credits, r.source AS source, r.pair AS pair FROM alerts a "
                            "JOIN users u ON a.user_id=u.id JOIN rules r ON r.id=a.rule_id "
                            "WHERE a.status='pending' ORDER BY a.id").fetchall()
     for alert in alerts:

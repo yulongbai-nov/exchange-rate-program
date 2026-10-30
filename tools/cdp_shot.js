@@ -108,8 +108,11 @@ async function main() {
     await evaluate('window.preview.toggleReverse()', 700);
     await evaluate('window.preview.applyZoom(55, 85)', 900);
     await shot('05-zoom.png');
+    await evaluate("window.preview.setRange('max')", 2600);
+    await shot('06-max-10y.png');
     const finalState = await client.send('Runtime.evaluate', {
-      expression: 'JSON.stringify(window.preview.getState())', returnByValue: true,
+      expression: 'JSON.stringify((() => { const s = window.preview.getState(); return {pair: s.pair, range: s.range, reverse: s.reverse, points: (s.chartData && s.chartData.buckets || []).length}; })())',
+      returnByValue: true,
     });
     console.log('final state:', finalState.result.value);
   } finally {

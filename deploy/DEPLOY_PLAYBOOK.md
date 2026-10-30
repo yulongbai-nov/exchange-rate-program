@@ -161,6 +161,31 @@ wxcloud run:deploy . \
 - [ ] 订阅消息模板 ID 与字段映射和实际模板一致
 - [ ] 备份桶权限确认（只有本环境可读写）
 
+## 8.5 本地先验证再部署
+
+部署一次要 2–5 分钟，所以每个改动都先在本地跑通：
+
+```bash
+python3 -m unittest discover -s backend/tests -v
+python3 scripts/local_check.py          # 真实拉取所有来源 + 临时库 + 全 API
+node --test miniprogram/tests/request.test.js
+```
+
+图表这类视觉改动还要跑本地视觉 harness（与小程序共用同一个 ECharts option）：
+
+```bash
+python3 tools/seed_preview.py /tmp/preview.db
+DISABLE_COLLECTOR=1 python3 -m backend.server --demo --db /tmp/preview.db --port 8098 &
+python3 tools/preview_server.py --port 8099 --api http://127.0.0.1:8098 &
+NODE_PATH=~/dsh-browser/tools/node_modules node tools/cdp_shot.js
+```
+
+截图输出到 `docs/screenshots/`，逐张确认线型、图例、缩放、反向换算后再部署。
+
+补充：微信公众平台后台会话会过期，过期后无法在控制台设置体验版；此时可以用
+`miniprogram-ci` 的 `preview` 生成**预览二维码**（项目根目录脚本示例见 `docs/screenshots/preview-qr.png`），
+扫码即可先验证小程序，等后台重新扫码登录后再正式设为体验版。
+
 ## 9. 踩坑全表
 
 | # | 现象 | 根因 | 处理 |

@@ -19,17 +19,38 @@ python3 -m backend.server --demo --port 8000
 curl http://127.0.0.1:8000/health
 ```
 
-## 报价来源
+## 报价来源与货币对
 
-小程序顶部可以在多个来源间切换，数据分开存储、分开画曲线：
+小程序顶部可切换 **16 个热门 CNY 货币对**（USD、EUR、GBP、JPY、HKD、AUD、CAD、SGD、CHF、NZD、KRW、THB、MYR、RUB、INR、TWD），同一货币对最多对照 **5 个来源**：
 
-| 来源 | 更新频率 | 说明 |
-| --- | --- | --- |
-| 中行现汇买入价 | 银行每个工作日不定时发布 | 结汇参考口径，周末/节假日可能长时间不更新 |
-| 在岸人民币（新浪财经） | 交易时段高频 | 公开市场行情，不是银行牌价 |
-| 离岸人民币（新浪财经） | 接近 24 小时 | 公开市场行情，波动与在岸可能有差异 |
+| 来源 | 覆盖 | 更新频率 | 说明 |
+| --- | --- | --- | --- |
+| 中行现汇买入 | BOC 有牌价的货币 | 银行工作日不定时 | 结汇参考口径 |
+| 中行现钞买入 | 同上 | 同上 | 与现汇对比看结汇差 |
+| 新浪在岸 | 16 对全覆盖 | 秒级 tick | 公开市场行情，非银行牌价 |
+| 新浪离岸 | USD/CNH | 秒级 tick | 离岸市场，波动可能与在岸有差异 |
+| 每日中间价 | 16 对 | 每日 | 公开日更汇率兜底，缺失来源显示 — |
 
-三者价格口径不同，不要直接比较绝对值。监测规则会记住创建时选中的来源，只用该来源的报价触发提醒。
+不同来源口径不同，**不要直接比较绝对值**。监测规则按「货币对 + 来源」触发，只使用该来源的报价。
+
+界面为 Yahoo Finance 风格：多色折线（无数据点）、右侧 y 轴、1D 前收虚线、时间范围 `1D/5D/1M/6M/1Y/Max`、双指缩放/拖动、图例点选显隐、反向换算按钮（`1 外币 = x CNY` ⇄ `1 人民币 = x 外币`）。图表用开源 Apache ECharts + echarts-for-weixin 适配层，许可证见 `miniprogram/components/ec-canvas/THIRD_PARTY.md`。
+
+## 本地验证（部署前）
+
+```bash
+python3 -m unittest discover -s backend/tests -v   # 后端单元测试
+python3 scripts/local_check.py                      # 真实拉源 + 临时库 + 全 API 冒烟
+node --test miniprogram/tests/request.test.js       # 小程序请求层
+```
+
+视觉验证（与小程序共用同一份 `miniprogram/utils/chart-option.js`）：
+
+```bash
+python3 tools/seed_preview.py /tmp/preview.db
+DISABLE_COLLECTOR=1 python3 -m backend.server --demo --db /tmp/preview.db --port 8098 &
+python3 tools/preview_server.py --port 8099 --api http://127.0.0.1:8098 &
+node tools/cdp_shot.js     # 截图到 docs/screenshots/
+```
 
 ## 数据持久化与备份（云托管）
 

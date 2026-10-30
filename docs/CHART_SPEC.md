@@ -1,6 +1,8 @@
-# 图表规范（v2，参考 Yahoo Finance）
+# 图表规范（v2，参考 Yahoo Finance，已实现）
 
-> 目标：多来源对比的折线图，交互接近 Yahoo Finance；实现前先跑
+> 实现：Apache ECharts + echarts-for-weixin（`miniprogram/components/ec-canvas`），option 由
+> `miniprogram/utils/chart-option.js` 生成，`tools/preview.html` 复用同一份 option 做本地视觉验证。
+> 改动前先跑
 > `python3 scripts/local_check.py` + 单元测试，通过后再部署。
 
 ## 时间范围（顶部胶囊）

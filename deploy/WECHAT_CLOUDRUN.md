@@ -32,12 +32,17 @@
 
 ### 兜底工作流
 
-`.github/workflows/cloudrun-deploy-guard.yml` 在每次 push 后等 5 分钟，检查云托管是否已经出现更新的版本；没有则用 CloudRun CLI 直接部署这次提交。需要的仓库 Secrets：
+`.github/workflows/cloudrun-deploy-guard.yml` 在每次 push 后按分钟轮询云托管版本列表（只看本次 push 之后创建、状态为 `normal` 的版本）；确认 Webhook 没有部署后，才用 CloudRun CLI 部署这次提交，并继续轮询直到版本正常，超时则让 Action 失败报警。需要的仓库 Secrets：
 
 - `WX_APPID`：`wxcdd43c92899fd398`
 - `WX_CLI_KEY`：云托管控制台「设置 → CLI 密钥」生成的密钥（只在生成时显示一次）
 
-CLI 命令用 `--targetDir=.` 跳过「部署方式」交互、用 `--remark` 跳过「版本备注」交互，适合 CI 非交互运行。
+CLI 细节：
+
+- `--targetDir=.` 跳过「部署方式」交互、`--remark` 跳过「版本备注」交互，适合 CI 非交互运行
+- CLI 用 `.dockerignore` 打包代码包，**不支持 `!` 取反规则**（会让上传的 zip 变成空包、构建报 `zipfile is empty`），所以 `.dockerignore` 只能写普通排除项
+
+注意：这个工作流校验的是「本次 push 之后有正常版本」，因为同一 push 只可能由同一提交触发；它不会读取镜像内嵌的 commit 号。
 
 ## 平台证书（出站 TLS）
 

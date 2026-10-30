@@ -4,6 +4,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     TZ=Asia/Shanghai
 
+# Snapshot backups use the official COS SDK through the CloudRun temporary
+# credentials endpoint. The runtime keeps working without it (backup disabled).
+RUN pip install --no-cache-dir cos-python-sdk-v5==1.9.44
+
 # The official Python image supplies CA roots and the IANA timezone database.
 # Fail the build if either prerequisite is missing; never bypass TLS verification.
 RUN python -c "import ssl; from zoneinfo import ZoneInfo; assert ssl.create_default_context().get_ca_certs(); ZoneInfo('Asia/Shanghai')" \

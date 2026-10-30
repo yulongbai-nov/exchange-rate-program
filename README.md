@@ -19,6 +19,29 @@ python3 -m backend.server --demo --port 8000
 curl http://127.0.0.1:8000/health
 ```
 
+## 数据持久化与备份（云托管）
+
+生产数据写在容器本地 `/data/rates.sqlite3`（SQLite，WAL 模式，报价以银行发布时间为主键天然去重）。容器磁盘不跨实例共享，所以云托管服务必须保持 **单实例**（最小 1 / 最大 1）；要扩多实例需要先把存储换成云托管 MySQL。
+
+双备份由 `backend/storage.py` 负责：
+
+- 每 `BACKUP_INTERVAL_SECONDS`（默认 600 秒）以及收到 SIGTERM 时，用 SQLite 在线 backup 生成一致性快照，上传到云托管对象存储（`backups/rates-*.sqlite3`，默认保留 24 份）
+- 进程启动时如果 `/data/rates.sqlite3` 不存在，会自动下载最新快照恢复，因此重新部署不会丢历史
+- 访问对象存储不需要手工申请 COS 密钥：容器内调用平台接口 `GET http://api.weixin.qq.com/_/cos/getauth` 获取当前环境存储桶的临时密钥
+
+`GET /health` 会返回 `instance`（实例名）和 `backup`（是否启用、上次成功时间、上次错误、恢复来源），可直接判断备份是否正常。
+
+可选环境变量（默认值适配当前环境）：
+
+| 变量 | 默认值 |
+| --- | --- |
+| `COS_BUCKET` | `7072-prod-d9gjkq67xd89186c3-1521599365` |
+| `COS_REGION` | `ap-shanghai` |
+| `COS_BACKUP_PREFIX` | `backups/` |
+| `BACKUP_INTERVAL_SECONDS` | `600` |
+| `BACKUP_KEEP` | `24` |
+| `BACKUP_ENABLED` | `1`（设 `0` 关闭备份） |
+
 ## 接入真实行情与微信
 
 1. 在服务器安全环境设置中注入 `.env.example` 列出的微信配置。不要将密钥放进小程序或 Git。后端读取进程环境，**不会自动读取 `.env` 文件**。

@@ -1,0 +1,71 @@
+name: CloudRun deploy guard
+
+# Fallback for the WeChat CloudRun push webhook. The webhook usually builds and
+# deploys this commit within ~3 minutes; when the delivery fails (GitHub shows
+# 502 from webhook.tcloudbase.com) nothing is deployed, so this job deploys the
+# same commit through the CloudRun CLI instead.
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: cloudrun-deploy-guard
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install CloudRun CLI
+        run: npm install -g @wxcloud/cli@2.3.3
+
+      - name: Login
+        env:
+          WX_APPID: ${{ secrets.WX_APPID }}
+          WX_CLI_KEY: ${{ secrets.WX_CLI_KEY }}
+        run: wxcloud login --appId "$WX_APPID" --privateKey "$WX_CLI_KEY"
+
+      - name: Wait for the push webhook deploy
+        run: sleep 300
+
+      - name: Check whether this push was deployed
+        id: check
+        env:
+          ENV_ID: prod-d9gjkq67xd89186c3
+          SERVICE: exchange-rate-api
+        run: |
+          set -euo pipefail
+          wxcloud version:list --envId "$ENV_ID" --serviceName "$SERVICE" > /tmp/versions.txt 2>&1 || true
+          cat /tmp/versions.txt
+          latest=$(grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}' /tmp/versions.txt | sort | tail -1 || true)
+          push_epoch=$(date -u -d "${{ github.event.head_commit.timestamp }}" +%s)
+          deployed=false
+          if [ -n "$latest" ]; then
+            # CloudRun reports version times in Asia/Shanghai (UTC+8).
+            latest_epoch=$(( $(date -u -d "$latest" +%s) - 8*3600 ))
+            echo "latest=$latest push_epoch=$push_epoch latest_epoch=$latest_epoch"
+            if [ "$latest_epoch" -ge $((push_epoch - 120)) ]; then deployed=true; fi
+          fi
+          echo "deployed=$deployed" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy fallback
+        if: steps.check.outputs.deployed != 'true'
+        run: |
+          # --targetDir is required to skip the interactive deploy-method prompt,
+          # --remark skips the interactive version-note prompt.
+          wxcloud run:deploy . \
+            --envId prod-d9gjkq67xd89186c3 \
+            --serviceName exchange-rate-api \
+            --containerPort 8000 \
+            --dockerfile Dockerfile \
+            --override --noConfirm --detach \
+            --targetDir=. \
+            --remark "ci fallback: ${{ github.sha }}"

@@ -30,6 +30,15 @@
 - GitHub 仓库 Settings → Webhooks → Recent Deliveries 查看响应码
 - 漏构建时，在控制台「部署发布 → 发布」从仓库手动发布一次，或修复后重新 push 提交
 
+### 兜底工作流
+
+`.github/workflows/cloudrun-deploy-guard.yml` 在每次 push 后等 5 分钟，检查云托管是否已经出现更新的版本；没有则用 CloudRun CLI 直接部署这次提交。需要的仓库 Secrets：
+
+- `WX_APPID`：`wxcdd43c92899fd398`
+- `WX_CLI_KEY`：云托管控制台「设置 → CLI 密钥」生成的密钥（只在生成时显示一次）
+
+CLI 命令用 `--targetDir=.` 跳过「部署方式」交互、用 `--remark` 跳过「版本备注」交互，适合 CI 非交互运行。
+
 ## 平台证书（出站 TLS）
 
 云托管在出口用自签名证书终结 `api.weixin.qq.com`，该证书挂载在容器内 `/app/cert/certificate.crt`。`backend/entrypoint.sh` 启动时把它追加到系统 CA 包，并通过 `SSL_CERT_FILE` 生效——**不关闭 TLS 校验**，公共 CA 仍然有效（中行行情不受影响）。

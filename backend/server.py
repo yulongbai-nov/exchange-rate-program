@@ -58,7 +58,18 @@ class Application:
             health = {'ok':True,'demo':self.demo,'last_attempt':self.last_attempt,
                       'collection_error':self.collect_error,'instance':socket.gethostname()}
             if self.backup is not None:
-                health['backup'] = self.backup.status()
+                status = self.backup.status()
+                health['backup'] = status
+                health['backup_enabled'] = status['enabled']
+                health['backup_last_ok_at'] = status['last_ok_at']
+                health['backup_last_error'] = status['last_error']
+                health['backup_restored_from'] = status['restored_from']
+                health['backup_restore_failed'] = status['restore_failed']
+            try:
+                with connect(self.path) as db:
+                    health['db_quotes'] = db.execute('SELECT COUNT(*) FROM quotes').fetchone()[0]
+            except Exception:
+                health['db_quotes'] = None
             return health
         if path == '/api/login' and method == 'POST':
             code = body.get('code')

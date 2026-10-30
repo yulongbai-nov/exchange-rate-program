@@ -148,7 +148,7 @@ class BackupManager:
             client.delete_object(Bucket=self.bucket, Key=key)
             self.logger.info('old snapshot removed: %s', key)
 
-    def restore_if_missing(self, attempts=6, delay=5):
+    def restore_if_missing(self, attempts=12, delay=5):
         target = Path(self.path)
         if target.exists() and target.stat().st_size > 0:
             return False
